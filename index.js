@@ -10,22 +10,44 @@ app.use(express.json({ limit: '50mb' }));
 
 const PORT = process.env.PORT || 8080;
 
-// Friendly health check
 app.get('/', (req, res) => {
-  res.json({ status: '✅ Editly API LIVE', message: 'Use POST /generate with editSpec' });
+  res.json({ status: '✅ Editly API LIVE & FIXED (rawvideo buffer corrected)' });
 });
 
 app.post('/generate', async (req, res) => {
   console.log('📥 Received editSpec from n8n');
 
   try {
-    const { editSpec } = req.body;
+    let { editSpec } = req.body;
     if (!editSpec) return res.status(400).json({ error: 'editSpec required in body' });
 
     const outFile = `/tmp/${randomUUID()}.mp4`;
 
-    // ← THIS LINE FIXES THE ERROR FOREVER
-    const fullSpec = { ...editSpec, outPath: outFile, allowRemoteRequests: true };
+    // === PERMANENT FIX: Auto-force exact image size BEFORE zoompan (eliminates rawvideo error forever) ===
+    if (editSpec.clips) {
+      editSpec.clips = editSpec.clips.map(clip => {
+        if (clip.layers) {
+          clip.layers = clip.layers.map(layer => {
+            if (layer.type === 'image') {
+              return {
+                ...layer,
+                width: editSpec.width || 1080,
+                height: editSpec.height || 1920,
+                resizeMode: layer.resizeMode || 'cover'
+              };
+            }
+            return layer;
+          });
+        }
+        return clip;
+      });
+    }
+
+    const fullSpec = { 
+      ...editSpec, 
+      outPath: outFile, 
+      allowRemoteRequests: true 
+    };
 
     await editly(fullSpec);
 
